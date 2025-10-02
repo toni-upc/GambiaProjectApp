@@ -1,82 +1,124 @@
 package com.example.gambiaapp
 
-import android.os.Bundle
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.tooling.preview.Preview
-import com.example.gambiaapp.ui.theme.GambiaAppTheme
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Bundle
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.google.android.gms.location.*
 
-
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private val LOCATION_PERMISSION_REQUEST_CODE = 1001
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
 
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
-        if (ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
-                LOCATION_PERMISSION_REQUEST_CODE
-            )
-        } else {
-            getLastLocation()
+        setContent {
+            GambiaAppUI()
         }
     }
 
-    private fun getLastLocation() {
-        if (ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+    @Composable
+    fun GambiaAppUI() {
+        var latitude by remember { mutableStateOf<String?>(null) }
+        var longitude by remember { mutableStateOf<String?>(null) }
+
+        val context = this@MainActivity
+
+        val permissionLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            if (isGranted) {
+                getLastLocation(
+                    onSuccess = { lat, lon ->
+                        latitude = lat.toString()
+                        longitude = lon.toString()
+                    },
+                    onFailure = {
+                        Toast.makeText(context, "Location not available", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            } else {
+                Toast.makeText(context, "Location permission denied", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        // Request permission on first load
+        LaunchedEffect(Unit) {
+            val permissionCheck = ContextCompat.checkSelfPermission(
+                context, Manifest.permission.ACCESS_FINE_LOCATION
+            )
+            if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+                getLastLocation(
+                    onSuccess = { lat, lon ->
+                        latitude = lat.toString()
+                        longitude = lon.toString()
+                    },
+                    onFailure = {
+                        Toast.makeText(context, "Location not available", Toast.LENGTH_SHORT).show()
+                    }
+                )
+            } else {
+                permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            }
+        }
+
+        // UI
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            content = { padding ->
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text("Your Location:", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text("Latitude: ${latitude ?: "Loading..."}")
+                    Text("Longitude: ${longitude ?: "Loading..."}")
+                }
+            }
+        )
+    }
+
+    private fun getLastLocation(
+        onSuccess: (latitude: Double, longitude: Double) -> Unit,
+        onFailure: () -> Unit
+    ) {
+        if (ContextCompat.checkSelfPermission(
+                this, Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
         ) {
+            onFailure()
             return
         }
 
         fusedLocationClient.lastLocation
             .addOnSuccessListener { location ->
                 if (location != null) {
-                    val lat = location.latitude
-                    val lon = location.longitude
-                    Toast.makeText(this, "Lat: $lat, Lon: $lon", Toast.LENGTH_LONG).show()
+                    onSuccess(location.latitude, location.longitude)
                 } else {
-                    Toast.makeText(this, "Location not available", Toast.LENGTH_SHORT).show()
+                    onFailure()
                 }
             }
-    }
-
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
-        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE &&
-            grantResults.isNotEmpty() &&
-            grantResults[0] == PackageManager.PERMISSION_GRANTED
-        ) {
-            getLastLocation()
-        } else {
-            Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
-        }
+            .addOnFailureListener {
+                onFailure()
+            }
     }
 }
